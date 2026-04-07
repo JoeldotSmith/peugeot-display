@@ -26,9 +26,10 @@ add_executable(sim
     sim/main.cpp
     ui/ui.c
     ui/ui_Screen1.c
-    ui/ui_font_bitcount_40.c
     ui/medium.c
     ui/largest.c
+    ui/medium1.c
+    ui/largest1.c
 )
 
 target_include_directories(sim PRIVATE

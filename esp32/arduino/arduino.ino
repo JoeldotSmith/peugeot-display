@@ -23,6 +23,7 @@ struct Data {
   float voltage;
   float boost;
   float coolantTemp;
+  float oilPressure;
 };
 volatile Data latest;
 volatile Data current;
@@ -53,18 +54,22 @@ void handle_connection() {
 } 
 
 void handle_boost() {
-    // if (current.boost != latest.boost) {
-    //     char buf[16];
-    //     snprintf(buf, sizeof(buf), "%.1f PSI", latest.boost);
-    //     lv_label_set_text(boostLabel, buf);
-    //     lv_bar_set_value(boostBar, (int)(latest.boost * 10), LV_ANIM_OFF);
-    // }
+    if (current.boost != latest.boost) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%.1f", latest.boost);
+        lv_label_set_text(boostLabel, buf);
+        if(boostBar) {
+            lv_bar_set_value(boostBar, (int)(latest.boost * 10), LV_ANIM_OFF);
+        } else {
+            Serial.println("boostBar is NULL!");
+        }
+    }
 }
 
 void handle_voltage(){ 
   if (current.voltage != latest.voltage) {
     char buf[16];
-    snprintf(buf, sizeof(buf), "%.1fV", latest.voltage);
+    snprintf(buf, sizeof(buf), "%.1f   V", latest.voltage);
     lv_label_set_text(ui_Label1, buf);
   }
 } 
@@ -72,11 +77,18 @@ void handle_voltage(){
 void handle_coolant(){ 
   if (current.coolantTemp != latest.coolantTemp) {
     char buf1[16];
-    snprintf(buf1, sizeof(buf1), "%.1f C", latest.coolantTemp);
+    snprintf(buf1, sizeof(buf1), "%.1f  °C", latest.coolantTemp);
     lv_label_set_text(ui_Label2, buf1);
   }
 } 
 
+void handle_oil_pressure(){ 
+  if (current.oilPressure != latest.oilPressure) {
+    char buf1[16];
+    snprintf(buf1, sizeof(buf1), "%.1f PSI", latest.oilPressure);
+    lv_label_set_text(oilPressureLabel, buf1);
+  }
+} 
 void onReceive(const esp_now_recv_info *info, const uint8_t *data, int len) {
     float v, c, b;
     if (sscanf((const char*)data, "%f-%f-%f", &v, &c, &b) == 3) {
@@ -126,10 +138,7 @@ void setup()
     lvgl_port_init(board->getLCD(), board->getTouch());
     
     lvgl_port_lock(-1);
-
     ui_init();
-    // series = lv_chart_get_series_next(ui_Chart1, NULL);
-    
     lvgl_port_unlock();
     
     Serial.println("Setup complete");
@@ -137,13 +146,26 @@ void setup()
 }
 
 void loop() {
+  if (!inited) return;
   lv_timer_handler(); 
   lvgl_port_lock(-1);
+
   latest.voltage += 0.1f;
+  latest.boost += 0.1f;
+  latest.boost = latest.boost * 1.2f;
+  latest.oilPressure += 0.1f;
+  latest.coolantTemp += 0.1f;
   if (latest.voltage > 10.0f) latest.voltage = 0.0f;
+  if (latest.boost > 15.0f) latest.boost = 0.0f;
+  if (latest.coolantTemp > 150.0f) latest.coolantTemp = 0.0f;
+  if (latest.oilPressure > 125.0f) latest.oilPressure = 0.0f;
 
   handle_voltage();
+  handle_boost();
+  handle_coolant();
+  handle_oil_pressure();
   memcpy((void*)&current, (const void*)&latest, sizeof(Data));
+  
   lvgl_port_unlock();
   delay(5);
 }

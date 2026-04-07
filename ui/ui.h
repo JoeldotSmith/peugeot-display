@@ -29,6 +29,8 @@ extern lv_obj_t *ui____initial_actions0;
 // FONTS
 LV_FONT_DECLARE(medium);
 LV_FONT_DECLARE(largest);
+LV_FONT_DECLARE(largest1);
+LV_FONT_DECLARE(medium1);
 
 // UI INIT
 void ui_init(void);

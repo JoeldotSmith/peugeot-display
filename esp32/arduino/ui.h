@@ -27,7 +27,10 @@ extern lv_obj_t *ui____initial_actions0;
 // LV_IMG_DECLARE( boost_gauge_transparent);
 
 // FONTS
-LV_FONT_DECLARE( ui_font_bitcount_40);
+LV_FONT_DECLARE(medium);
+LV_FONT_DECLARE(largest);
+LV_FONT_DECLARE(medium1);
+LV_FONT_DECLARE(largest1);
 
 // UI INIT
 void ui_init(void);

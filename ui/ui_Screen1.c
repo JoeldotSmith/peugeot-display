@@ -91,11 +91,11 @@ void ui_Screen1_screen_init(void)
         lv_obj_t *nm = lv_label_create(row); \
         lv_obj_set_width(nm, 260); \
         lv_label_set_text(nm, name_text); \
-        lv_obj_set_style_text_font(nm, &medium, 0); \
+        lv_obj_set_style_text_font(nm, &medium1, 0); \
         lv_obj_set_style_text_color(nm, lv_color_hex(COL_DIM), 0); \
         val_var = lv_label_create(row); \
         lv_obj_set_width(val_var, 260); \
-        lv_obj_set_style_text_font(val_var, &medium, 0); \
+        lv_obj_set_style_text_font(val_var, &medium1, 0); \
         lv_obj_set_style_text_color(val_var, lv_color_hex(COL_ACCENT), 0); \
         lv_obj_set_style_text_align(val_var, LV_TEXT_ALIGN_RIGHT, 0); \
     }
@@ -129,7 +129,7 @@ void ui_Screen1_screen_init(void)
     lv_obj_t *boostHeading = lv_label_create(ui_Container3);
     lv_obj_set_width(boostHeading, LV_SIZE_CONTENT);
     lv_label_set_text(boostHeading, "BOOST");
-    lv_obj_set_style_text_font(boostHeading, &medium, 0);
+    lv_obj_set_style_text_font(boostHeading, &medium1, 0);
     lv_obj_set_style_text_color(boostHeading, lv_color_hex(COL_DIM), 0);
     lv_obj_set_style_text_letter_space(boostHeading, 4, 0);
 
@@ -145,14 +145,14 @@ void ui_Screen1_screen_init(void)
     lv_obj_set_width(boostLabel, 260);
     lv_obj_set_height(boostLabel, LV_SIZE_CONTENT);
     lv_label_set_text(boostLabel, "0.0");
-    lv_obj_set_style_text_font(boostLabel, &largest, 0);
+    lv_obj_set_style_text_font(boostLabel, &largest1, 0);
     lv_obj_set_style_text_color(boostLabel, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_text_align(boostLabel, LV_TEXT_ALIGN_RIGHT, 0);
 
     boostUnitLabel = lv_label_create(ui_Container5);
     lv_obj_set_size(boostUnitLabel, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_label_set_text(boostUnitLabel, "PSI");
-    lv_obj_set_style_text_font(boostUnitLabel, &medium, 0);
+    lv_obj_set_style_text_font(boostUnitLabel, &medium1, 0);
     lv_obj_set_style_text_color(boostUnitLabel, lv_color_hex(COL_DIM), 0);
 
     // ── Boost bar ─────────────────────────────────────────────────
