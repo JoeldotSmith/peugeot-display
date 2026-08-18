@@ -1,5 +1,6 @@
 #include "esp_timer.h"
 #include "esp_lib_utils.h"
+#include "esp_heap_caps.h"
 #include "lvgl_v8_port.h"
 
 using namespace esp_panel::drivers;
@@ -7,6 +8,8 @@ using namespace esp_panel::drivers;
 static SemaphoreHandle_t lvgl_mux = nullptr;
 static TaskHandle_t lvgl_task_handle = nullptr;
 static esp_timer_handle_t lvgl_tick_timer = NULL;
+static constexpr int DISPLAY_ACTIVE_HEIGHT = 340;
+static constexpr int DRAW_BUFFER_LINES = 40;
 
 // ============================================================
 // Flush callback - v9 API
@@ -15,12 +18,17 @@ static void flush_callback(lv_display_t *disp, const lv_area_t *area, uint8_t *p
 {
     LCD *lcd = (LCD *)lv_display_get_user_data(disp);
 
-    if (lv_display_flush_is_last(disp)) {
-        lcd->switchFrameBufferTo(px_map);
+    if (area->y2 >= 0 && area->y1 < DISPLAY_ACTIVE_HEIGHT) {
+        int x1 = area->x1 < 0 ? 0 : area->x1;
+        int y1 = area->y1 < 0 ? 0 : area->y1;
+        int x2 = area->x2 >= (int)lcd->getFrameWidth() ? (int)lcd->getFrameWidth() - 1 : area->x2;
+        int y2 = area->y2 >= DISPLAY_ACTIVE_HEIGHT ? DISPLAY_ACTIVE_HEIGHT - 1 : area->y2;
+        int width = x2 - x1 + 1;
+        int height = y2 - y1 + 1;
 
-        // Wait for vsync
-        ulTaskNotifyValueClear(NULL, ULONG_MAX);
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (width > 0 && height > 0) {
+            lcd->drawBitmap(x1, y1, width, height, px_map);
+        }
     }
 
     lv_display_flush_ready(disp);
@@ -43,23 +51,26 @@ IRAM_ATTR bool onLcdVsyncCallback(void *user_data)
 static lv_display_t *display_init(LCD *lcd)
 {
     auto lcd_width  = lcd->getFrameWidth();
-    auto lcd_height = 340; // Only use top 340 pixels
+    auto lcd_height = DISPLAY_ACTIVE_HEIGHT;
 
     // Create v9 display
     lv_display_t *disp = lv_display_create(lcd_width, lcd_height);
     lv_display_set_user_data(disp, (void *)lcd);
     lv_display_set_flush_cb(disp, flush_callback);
 
-    // Use frame buffers from LCD directly (direct/avoid-tearing mode)
-    void *buf0 = lcd->getFrameBufferByIndex(0);
-    void *buf1 = lcd->getFrameBufferByIndex(1);
+    size_t buffer_size = lcd_width * DRAW_BUFFER_LINES * sizeof(lv_color_t);
+    void *buf0 = heap_caps_malloc(buffer_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    void *buf1 = heap_caps_malloc(buffer_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buf0 == nullptr) buf0 = heap_caps_malloc(buffer_size, MALLOC_CAP_8BIT);
+    if (buf1 == nullptr) buf1 = heap_caps_malloc(buffer_size, MALLOC_CAP_8BIT);
+    if (buf0 == nullptr || buf1 == nullptr) return nullptr;
 
     lv_display_set_buffers(
         disp,
         buf0,
         buf1,
-        lcd_width * lcd_height * sizeof(lv_color_t),
-        LV_DISPLAY_RENDER_MODE_DIRECT
+        buffer_size,
+        LV_DISPLAY_RENDER_MODE_PARTIAL
     );
 
     return disp;
@@ -167,8 +178,6 @@ bool lvgl_port_init(LCD *lcd, Touch *tp)
         &lvgl_task_handle, core_id
     );
     if (ret != pdPASS) return false;
-
-    lcd->attachRefreshFinishCallback(onLcdVsyncCallback, (void *)lvgl_task_handle);
 
     return true;
 }

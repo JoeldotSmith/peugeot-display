@@ -12,8 +12,13 @@ lv_obj_t *ui_Container3 = NULL;
 lv_obj_t *ui_Container5 = NULL;
 lv_obj_t *boostLabel = NULL;
 lv_obj_t *oilPressureLabel = NULL;
+lv_obj_t *manifoldPressureLabel = NULL;
 lv_obj_t *boostBar = NULL;
 lv_obj_t *boostUnitLabel = NULL;
+lv_obj_t *rpmLabel = NULL;
+lv_obj_t *indicatorLabel = NULL;
+lv_obj_t *spoilerLabel = NULL;
+lv_obj_t *canStatusLabel = NULL;
 
 // colour palette
 #define COL_BG          0x0A0A0A
@@ -80,7 +85,7 @@ void ui_Screen1_screen_init(void)
     { \
         lv_obj_t *row = lv_obj_create(parent); \
         lv_obj_remove_style_all(row); \
-        lv_obj_set_size(row, 530, LV_SIZE_CONTENT); \
+        lv_obj_set_size(row, 530, 30); \
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW); \
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, \
                               LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER); \
@@ -89,25 +94,34 @@ void ui_Screen1_screen_init(void)
         lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0); \
         lv_obj_set_style_pad_bottom(row, 6, 0); \
         lv_obj_t *nm = lv_label_create(row); \
-        lv_obj_set_width(nm, 260); \
+        lv_obj_set_width(nm, 230); \
         lv_label_set_text(nm, name_text); \
         lv_obj_set_style_text_font(nm, &medium1, 0); \
         lv_obj_set_style_text_color(nm, lv_color_hex(COL_DIM), 0); \
         val_var = lv_label_create(row); \
-        lv_obj_set_width(val_var, 260); \
+        lv_obj_set_width(val_var, 290); \
         lv_obj_set_style_text_font(val_var, &medium1, 0); \
         lv_obj_set_style_text_color(val_var, lv_color_hex(COL_ACCENT), 0); \
         lv_obj_set_style_text_align(val_var, LV_TEXT_ALIGN_RIGHT, 0); \
     }
 
-    MAKE_ROW(ui_Container1, voltName, "Voltage", ui_Label1)
-    lv_label_set_text(ui_Label1, "--.- V");
+    MAKE_ROW(ui_Container1, rpmName, "RPM", rpmLabel)
+    lv_label_set_text(rpmLabel, "---- rpm");
 
     MAKE_ROW(ui_Container1, coolName, "Coolant Temp", ui_Label2)
-    lv_label_set_text(ui_Label2, "---.- °C");
+    lv_label_set_text(ui_Label2, "---.- C");
 
-    MAKE_ROW(ui_Container1, oilName, "Oil Pressure", oilPressureLabel)
-    lv_label_set_text(oilPressureLabel, "--.- PSI");
+    MAKE_ROW(ui_Container1, mapName, "Manifold Abs", manifoldPressureLabel)
+    lv_label_set_text(manifoldPressureLabel, "waiting");
+
+    MAKE_ROW(ui_Container1, indName, "Indicators", indicatorLabel)
+    lv_label_set_text(indicatorLabel, "--");
+
+    MAKE_ROW(ui_Container1, spoilerName, "Spoiler", spoilerLabel)
+    lv_label_set_text(spoilerLabel, "---%");
+
+    MAKE_ROW(ui_Container1, canName, "CAN", canStatusLabel)
+    lv_label_set_text(canStatusLabel, "starting");
 
     #undef MAKE_ROW
 
@@ -135,30 +149,30 @@ void ui_Screen1_screen_init(void)
 
     ui_Container5 = lv_obj_create(ui_Container3);
     lv_obj_remove_style_all(ui_Container5);
-    lv_obj_set_size(ui_Container5, 340, LV_SIZE_CONTENT);
+    lv_obj_set_size(ui_Container5, 405, LV_SIZE_CONTENT);
     lv_obj_set_align(ui_Container5, LV_ALIGN_CENTER);
     lv_obj_set_flex_flow(ui_Container5, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(ui_Container5, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER);
 
     boostLabel = lv_label_create(ui_Container5);
-    lv_obj_set_width(boostLabel, 260);
+    lv_obj_set_width(boostLabel, 325);
     lv_obj_set_height(boostLabel, LV_SIZE_CONTENT);
-    lv_label_set_text(boostLabel, "0.0");
+    lv_label_set_text(boostLabel, "----");
     lv_obj_set_style_text_font(boostLabel, &largest1, 0);
     lv_obj_set_style_text_color(boostLabel, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_text_align(boostLabel, LV_TEXT_ALIGN_RIGHT, 0);
 
     boostUnitLabel = lv_label_create(ui_Container5);
     lv_obj_set_size(boostUnitLabel, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_label_set_text(boostUnitLabel, "PSI");
+    lv_label_set_text(boostUnitLabel, "kPa");
     lv_obj_set_style_text_font(boostUnitLabel, &medium1, 0);
     lv_obj_set_style_text_color(boostUnitLabel, lv_color_hex(COL_DIM), 0);
 
     // ── Boost bar ─────────────────────────────────────────────────
     boostBar = lv_bar_create(ui_Panel1);
     lv_obj_set_size(boostBar, 971, 28);
-    lv_bar_set_range(boostBar, 0, 150);
+    lv_bar_set_range(boostBar, -100, 200);
     lv_bar_set_value(boostBar, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(boostBar, lv_color_hex(COL_BAR_BG), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(boostBar, 255, LV_PART_MAIN);
@@ -195,5 +209,10 @@ void ui_Screen1_screen_destroy(void)
     boostLabel       = NULL;
     boostUnitLabel   = NULL;
     oilPressureLabel = NULL;
+    manifoldPressureLabel = NULL;
     boostBar         = NULL;
+    rpmLabel         = NULL;
+    indicatorLabel   = NULL;
+    spoilerLabel     = NULL;
+    canStatusLabel   = NULL;
 }

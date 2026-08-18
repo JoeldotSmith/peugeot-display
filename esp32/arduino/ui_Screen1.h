@@ -18,7 +18,12 @@ extern lv_obj_t *ui_Indicator;
 extern lv_obj_t *ui_Container5;
 extern lv_obj_t *boostLabel;
 extern lv_obj_t *oilPressureLabel;
+extern lv_obj_t *manifoldPressureLabel;
 extern lv_obj_t *boostBar;
+extern lv_obj_t *rpmLabel;
+extern lv_obj_t *indicatorLabel;
+extern lv_obj_t *spoilerLabel;
+extern lv_obj_t *canStatusLabel;
 
 void ui_Screen1_screen_init(void);
 void ui_Screen1_screen_destroy(void);

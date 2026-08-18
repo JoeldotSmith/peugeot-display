@@ -1,0 +1,20 @@
+.pio/build/waveshare_s3_5b/FrameworkArduino/MD5Builder.cpp.o: \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/MD5Builder.cpp \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/HEXBuilder.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/WString.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/pgmspace.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/newlib/platform_include/ctype.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/Stream.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/Print.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/newlib/platform_include/stdio.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/WString.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/Printable.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/MD5Builder.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/esp_system/include/esp_system.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/esp_common/include/esp_err.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/esp_common/include/esp_compiler.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/esp_common/include/esp_attr.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/esp_common/include/esp_bit_defs.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/esp_common/include/esp_idf_version.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32-libs/esp32s3/include/esp_rom/include/esp_rom_md5.h \
+ /Users/joelsmith/.platformio/packages/framework-arduinoespressif32/cores/esp32/HashBuilder.h
