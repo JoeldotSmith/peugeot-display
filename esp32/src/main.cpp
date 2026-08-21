@@ -15,20 +15,24 @@ Board *board = nullptr;
 bool inited = false;
 bool canDriverInstalled = false;
 bool displayReady = false;
+bool startupComplete = false;
+static uint32_t startupStartMs = 0;
 static lv_obj_t *displayBoostLabel = nullptr;
-static lv_obj_t *displayMapLabel = nullptr;
-static lv_obj_t *displayRpmLabel = nullptr;
+static lv_obj_t *displayBoostUnitLabel = nullptr;
 static lv_obj_t *displayCoolantLabel = nullptr;
-static lv_obj_t *displayIndicatorLabel = nullptr;
 static lv_obj_t *displaySpoilerLabel = nullptr;
-static lv_obj_t *displayCanLabel = nullptr;
+static lv_obj_t *displayClockLabel = nullptr;
+static lv_obj_t *displayCanRateLabel = nullptr;
+static lv_obj_t *displayBoostBar = nullptr;
+static lv_obj_t *displayDimOverlay = nullptr;
+static lv_obj_t *startupScreen = nullptr;
 
 struct Data {
   float coolantTemp;
-  float rpm;
+  // float rpm;
   float manifoldPressureKpa;
   float boostPressureKpa;
-  uint8_t indicatorRaw;
+  // uint8_t indicatorRaw;
   uint8_t spoilerRaw;
   int spoilerPercent;
   uint32_t frames;
@@ -37,8 +41,12 @@ struct Data {
   uint32_t mapResponses;
   uint32_t lastMappedFrameMs;
   uint32_t lastMapResponseMs;
-  bool indicatorsOn;
+  uint32_t secondsOfDay;
+  // bool indicatorsOn;
+  bool lightsOn;
   bool hasManifoldPressure;
+  bool hasClock;
+  bool hasLights;
 };
 Data latest;
 Data current;
@@ -46,6 +54,10 @@ Data current;
 static const uint32_t CAN_FRAMES_PER_LOOP = 32;
 static const uint32_t MAP_REQUEST_INTERVAL_MS = 250;
 static const float ATMOSPHERIC_PRESSURE_KPA = 101.0f;
+static const float KPA_TO_PSI = 0.1450377f;
+static const float KPA_TO_INHG = 0.295300f;
+static const int BOOST_BAR_MAX = 200;
+static const lv_opa_t DISPLAY_DIM_OPA = 123;
 
 static int spoiler_percent_from_raw(uint8_t raw) {
   if (raw <= 0x10) return 0;
@@ -55,34 +67,80 @@ static int spoiler_percent_from_raw(uint8_t raw) {
   return 100;
 }
 
+static uint32_t decode_clock_seconds(uint8_t d1, uint8_t d2, uint8_t d3) {
+  uint32_t raw = ((uint32_t)d1 << 12) | ((uint32_t)d2 << 4) | ((uint32_t)d3 >> 4);
+  return (raw + 86400UL - 43200UL + 510UL) % 86400UL;
+}
+
+static void format_clock(char *buf, size_t size, uint32_t secondsOfDay) {
+  uint32_t hour24 = secondsOfDay / 3600UL;
+  uint32_t minute = (secondsOfDay % 3600UL) / 60UL;
+  const char *suffix = hour24 < 12 ? "am" : "pm";
+  uint32_t hour12 = hour24 % 12;
+  if (hour12 == 0) hour12 = 12;
+  snprintf(buf, size, "%02lu:%02lu %s", (unsigned long)hour12, (unsigned long)minute, suffix);
+}
+
+static int boost_bar_value(float boostPressureKpa) {
+  float value = boostPressureKpa < 0.0f ? -boostPressureKpa : boostPressureKpa;
+  if (value < 0.0f) value = 0.0f;
+  if (value > BOOST_BAR_MAX) value = BOOST_BAR_MAX;
+  return (int)(value + 0.5f);
+}
+
 static void decode_can_message(const twai_message_t &message) {
   if (message.extd || message.rtr) return;
 
   latest.frames++;
   switch (message.identifier) {
-    case 0x208:
-      if (message.data_length_code >= 2) {
-        uint16_t raw = ((uint16_t)message.data[0] << 8) | message.data[1];
-        latest.rpm = raw * 0.125f;
-        latest.mappedFrames++;
-        latest.lastMappedFrameMs = millis();
-      }
-      break;
+    // RPM was useful while proving the CAN stream, but it is not needed on the dash.
+    // case 0x208:
+    //   if (message.data_length_code >= 2) {
+    //     uint16_t raw = ((uint16_t)message.data[0] << 8) | message.data[1];
+    //     latest.rpm = raw * 0.125f;
+    //     latest.mappedFrames++;
+    //     latest.lastMappedFrameMs = millis();
+    //   }
+    //   break;
     case 0x488:
       if (message.data_length_code >= 1) {
-        latest.coolantTemp = (message.data[0] * 0.5f) - 40.0f;
+        latest.coolantTemp = (float)message.data[0] - 40.0f;
         latest.mappedFrames++;
         latest.lastMappedFrameMs = millis();
       }
       break;
-    case 0x50D:
-      if (message.data_length_code >= 6) {
-        latest.indicatorRaw = message.data[5];
-        latest.indicatorsOn = message.data[5] == 0x65;
+    case 0x552:
+      if (message.data_length_code >= 3) {
+        latest.secondsOfDay = decode_clock_seconds(message.data[0], message.data[1], message.data[2]);
+        latest.hasClock = true;
         latest.mappedFrames++;
         latest.lastMappedFrameMs = millis();
       }
       break;
+    case 0x517:
+      if (message.data_length_code >= 3) {
+        if (message.data[0] == 0xEB && message.data[1] == 0x7A && message.data[2] == 0x80) {
+          latest.lightsOn = true;
+          latest.hasLights = true;
+          latest.mappedFrames++;
+          latest.lastMappedFrameMs = millis();
+        } else if (message.data[0] == 0x69 && message.data[1] == 0x5A && message.data[2] == 0x80) {
+          latest.lightsOn = false;
+          latest.hasLights = true;
+          latest.mappedFrames++;
+          latest.lastMappedFrameMs = millis();
+        }
+      }
+      break;
+    // Indicator state was only for signal validation and is intentionally unused now.
+    // case 0x50D:
+    //   if (message.data_length_code >= 6) {
+    //     latest.indicatorRaw = message.data[5];
+    //     latest.indicatorsOn = message.data[5] == 0x65;
+    //     latest.mappedFrames++;
+    //     latest.lastMappedFrameMs = millis();
+    //   }
+    //   break;
     case 0x612:
       if (message.data_length_code >= 5) {
         latest.spoilerRaw = message.data[4];
@@ -275,39 +333,147 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *text, int x, int y, in
   return label;
 }
 
-static lv_obj_t *make_row(lv_obj_t *parent, const char *name, const char *value, int y) {
-  make_label(parent, name, 500, y, 170, 32, LV_FONT_DEFAULT, lv_color_hex(0x888888));
-  return make_label(parent, value, 680, y, 330, 32, LV_FONT_DEFAULT, lv_color_hex(0xFFFFFF));
+static lv_obj_t *make_panel(lv_obj_t *parent, int x, int y, int w, int h) {
+  lv_obj_t *panel = lv_obj_create(parent);
+  lv_obj_remove_style_all(panel);
+  lv_obj_set_pos(panel, x, y);
+  lv_obj_set_size(panel, w, h);
+  lv_obj_set_style_bg_color(panel, lv_color_hex(0x071018), 0);
+  lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(panel, lv_color_hex(0x116A93), 0);
+  lv_obj_set_style_border_width(panel, 1, 0);
+  lv_obj_set_style_radius(panel, 2, 0);
+  lv_obj_set_style_pad_all(panel, 0, 0);
+  return panel;
+}
+
+static void make_wire_line(lv_obj_t *parent, int x, int y, int w, int h, uint32_t color) {
+  lv_obj_t *line = lv_obj_create(parent);
+  lv_obj_remove_style_all(line);
+  lv_obj_set_pos(line, x, y);
+  lv_obj_set_size(line, w, h);
+  lv_obj_set_style_bg_color(line, lv_color_hex(color), 0);
+  lv_obj_set_style_bg_opa(line, LV_OPA_80, 0);
+}
+
+static lv_obj_t *make_data_value(lv_obj_t *parent, const char *name, const char *value, int x, int y) {
+  make_label(parent, name, x, y, 160, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
+  return make_label(parent, value, x, y + 26, 220, 34, &lv_font_montserrat_24, lv_color_hex(0xE8F8FF));
+}
+
+static void create_startup_ui() {
+  lv_obj_t *screen = lv_obj_create(nullptr);
+  startupScreen = screen;
+  lv_obj_remove_style_all(screen);
+  lv_obj_set_size(screen, 1024, 340);
+  lv_obj_set_style_bg_color(screen, lv_color_hex(0x01060A), 0);
+  lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+
+  make_wire_line(screen, 28, 24, 968, 1, 0x0AA6E8);
+  make_wire_line(screen, 28, 316, 968, 1, 0x0AA6E8);
+  make_wire_line(screen, 28, 24, 1, 292, 0x0AA6E8);
+  make_wire_line(screen, 995, 24, 1, 292, 0x0AA6E8);
+
+  make_wire_line(screen, 50, 44, 170, 2, 0x34CFFF);
+  make_wire_line(screen, 50, 44, 2, 42, 0x34CFFF);
+  make_wire_line(screen, 804, 44, 170, 2, 0x34CFFF);
+  make_wire_line(screen, 972, 44, 2, 42, 0x34CFFF);
+  make_wire_line(screen, 50, 294, 170, 2, 0x34CFFF);
+  make_wire_line(screen, 50, 254, 2, 42, 0x34CFFF);
+  make_wire_line(screen, 804, 294, 170, 2, 0x34CFFF);
+  make_wire_line(screen, 972, 254, 2, 42, 0x34CFFF);
+
+  make_wire_line(screen, 318, 82, 388, 1, 0x116A93);
+  make_wire_line(screen, 318, 258, 388, 1, 0x116A93);
+  make_wire_line(screen, 438, 128, 148, 1, 0x116A93);
+  make_wire_line(screen, 438, 214, 148, 1, 0x116A93);
+
+  for (int i = 0; i < 8; i++) {
+    uint32_t color = (i == 2 || i == 5) ? 0x34CFFF : 0x116A93;
+    make_wire_line(screen, 424 + i * 24, 238, 12, 2, color);
+  }
+
+  lv_obj_t *boot = make_label(screen, "BOOT SEQUENCE", 0, 110, 1024, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
+  lv_obj_set_style_text_align(boot, LV_TEXT_ALIGN_CENTER, 0);
+
+  lv_obj_t *status = make_label(screen, "SYSTEM INITIALIZING", 0, 146, 1024, 34, &lv_font_montserrat_24, lv_color_hex(0xE8F8FF));
+  lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, 0);
+
+  lv_obj_t *substatus = make_label(screen, "CAN INTERFACE", 0, 186, 1024, 22, LV_FONT_DEFAULT, lv_color_hex(0x34CFFF));
+  lv_obj_set_style_text_align(substatus, LV_TEXT_ALIGN_CENTER, 0);
+
+  make_wire_line(screen, 268, 170, 54, 1, 0x116A93);
+  make_wire_line(screen, 702, 170, 54, 1, 0x116A93);
+
+  lv_screen_load(screen);
 }
 
 static void create_display_ui() {
   lv_obj_t *screen = lv_obj_create(nullptr);
   lv_obj_remove_style_all(screen);
   lv_obj_set_size(screen, 1024, 340);
-  lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_color(screen, lv_color_hex(0x02070C), 0);
   lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
 
-  make_label(screen, "BOOST", 24, 16, 240, 42, LV_FONT_DEFAULT, lv_color_hex(0xFAAE00));
-  displayBoostLabel = make_label(screen, "--", 24, 70, 280, 72, LV_FONT_DEFAULT, lv_color_hex(0xFFFFFF));
-  make_label(screen, "kPa gauge", 300, 104, 180, 34, LV_FONT_DEFAULT, lv_color_hex(0x888888));
+  make_wire_line(screen, 18, 18, 988, 1, 0x0AA6E8);
+  make_wire_line(screen, 18, 318, 988, 1, 0x0AA6E8);
+  make_wire_line(screen, 18, 18, 1, 300, 0x0AA6E8);
+  make_wire_line(screen, 1005, 18, 1, 300, 0x0AA6E8);
+  make_wire_line(screen, 420, 38, 1, 248, 0x104B68);
+  make_wire_line(screen, 746, 62, 1, 198, 0x104B68);
 
-  displayRpmLabel = make_row(screen, "RPM", "---- rpm", 24);
-  displayMapLabel = make_row(screen, "MAP", "waiting", 68);
-  displayCoolantLabel = make_row(screen, "Coolant", "---.- C", 112);
-  displayIndicatorLabel = make_row(screen, "Indicators", "--", 156);
-  displaySpoilerLabel = make_row(screen, "Spoiler", "---", 200);
-  displayCanLabel = make_row(screen, "CAN", "starting", 244);
+  make_panel(screen, 34, 38, 360, 248);
+  make_panel(screen, 446, 62, 274, 198);
+  make_panel(screen, 772, 62, 206, 198);
+
+  make_label(screen, "BOOST PRESSURE", 58, 58, 260, 28, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
+  displayBoostLabel = make_label(screen, "--", 44, 104, 270, 70, &lv_font_montserrat_48, lv_color_hex(0xE8F8FF));
+  lv_obj_set_style_text_align(displayBoostLabel, LV_TEXT_ALIGN_RIGHT, 0);
+  displayBoostUnitLabel = make_label(screen, "PSI", 320, 135, 64, 30, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
+  make_label(screen, "VAC", 58, 222, 64, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
+  make_label(screen, "BOOST", 286, 222, 88, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
+
+  displayBoostBar = lv_bar_create(screen);
+  lv_obj_set_pos(displayBoostBar, 58, 250);
+  lv_obj_set_size(displayBoostBar, 306, 14);
+  lv_bar_set_range(displayBoostBar, 0, BOOST_BAR_MAX);
+  lv_bar_set_value(displayBoostBar, 0, LV_ANIM_OFF);
+  lv_obj_set_style_bg_color(displayBoostBar, lv_color_hex(0x061018), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(displayBoostBar, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_border_color(displayBoostBar, lv_color_hex(0x116A93), LV_PART_MAIN);
+  lv_obj_set_style_border_width(displayBoostBar, 1, LV_PART_MAIN);
+  lv_obj_set_style_radius(displayBoostBar, 0, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(displayBoostBar, lv_color_hex(0x34CFFF), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_grad_color(displayBoostBar, lv_color_hex(0xE3313D), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_grad_dir(displayBoostBar, LV_GRAD_DIR_HOR, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(displayBoostBar, 0, LV_PART_INDICATOR);
+
+  make_label(screen, "ENGINE", 470, 82, 120, 24, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
+  displayCanRateLabel = make_data_value(screen, "CANBUS RATE", "-- fps", 470, 122);
+  displayCoolantLabel = make_data_value(screen, "COOLANT", "---.- C", 470, 188);
+
+  make_label(screen, "AERO", 796, 82, 120, 24, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
+  displaySpoilerLabel = make_data_value(screen, "SPOILER", "---", 796, 122);
+  displayClockLabel = make_data_value(screen, "CLOCK", "--:--", 796, 180);
+
+  displayDimOverlay = lv_obj_create(screen);
+  lv_obj_remove_style_all(displayDimOverlay);
+  lv_obj_set_pos(displayDimOverlay, 0, 0);
+  lv_obj_set_size(displayDimOverlay, 1024, 340);
+  lv_obj_set_style_bg_color(displayDimOverlay, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(displayDimOverlay, LV_OPA_TRANSP, 0);
+  lv_obj_clear_flag(displayDimOverlay, LV_OBJ_FLAG_CLICKABLE);
 
   lv_screen_load(screen);
 }
 
-void handle_rpm() {
-  if (current.rpm != latest.rpm) {
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%.0f rpm", latest.rpm);
-    lv_label_set_text(displayRpmLabel, buf);
-  }
-}
+// void handle_rpm() {
+//   if (current.rpm != latest.rpm) {
+//     char buf[16];
+//     snprintf(buf, sizeof(buf), "%.0f rpm", latest.rpm);
+//     lv_label_set_text(displayRpmLabel, buf);
+//   }
+// }
 
 void handle_boost() {
   if (current.boostPressureKpa != latest.boostPressureKpa ||
@@ -315,14 +481,44 @@ void handle_boost() {
       current.hasManifoldPressure != latest.hasManifoldPressure) {
     char buf[48];
     if (latest.hasManifoldPressure) {
-      snprintf(buf, sizeof(buf), "%.0f", latest.boostPressureKpa);
+      float boostPsi = latest.boostPressureKpa * KPA_TO_PSI;
+      float vacuumInHg = latest.boostPressureKpa < 0.0f ? -latest.boostPressureKpa * KPA_TO_INHG : 0.0f;
+      bool inVacuum = latest.boostPressureKpa < 0.0f;
+      snprintf(buf, sizeof(buf), "%.1f", inVacuum ? vacuumInHg : boostPsi);
       lv_label_set_text(displayBoostLabel, buf);
-      snprintf(buf, sizeof(buf), "%.0f kPa abs", latest.manifoldPressureKpa);
-      lv_label_set_text(displayMapLabel, buf);
+      lv_label_set_text(displayBoostUnitLabel, inVacuum ? "inHg" : "PSI");
+      lv_bar_set_value(displayBoostBar, boost_bar_value(latest.boostPressureKpa), LV_ANIM_OFF);
+      lv_obj_set_style_bg_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x29E675), LV_PART_INDICATOR);
+      lv_obj_set_style_bg_grad_color(displayBoostBar, lv_color_hex(inVacuum ? 0xFF6B76 : 0x34CFFF), LV_PART_INDICATOR);
+      lv_obj_set_style_shadow_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), LV_PART_INDICATOR);
+      lv_obj_set_style_text_color(displayBoostUnitLabel, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), 0);
     } else {
       lv_label_set_text(displayBoostLabel, "--");
-      lv_label_set_text(displayMapLabel, "waiting");
+      lv_label_set_text(displayBoostUnitLabel, "PSI");
+      lv_bar_set_value(displayBoostBar, 0, LV_ANIM_OFF);
     }
+  }
+}
+
+void handle_clock() {
+  if (current.secondsOfDay != latest.secondsOfDay ||
+      current.hasClock != latest.hasClock) {
+    char buf[16];
+    if (latest.hasClock) {
+      format_clock(buf, sizeof(buf), latest.secondsOfDay);
+      lv_label_set_text(displayClockLabel, buf);
+    } else {
+      lv_label_set_text(displayClockLabel, "--:--");
+    }
+  }
+}
+
+void handle_lights_dim() {
+  if (displayDimOverlay == nullptr) return;
+  if (current.lightsOn != latest.lightsOn ||
+      current.hasLights != latest.hasLights) {
+    lv_obj_set_style_bg_opa(displayDimOverlay, latest.lightsOn ? DISPLAY_DIM_OPA : LV_OPA_TRANSP, 0);
+    lv_obj_move_foreground(displayDimOverlay);
   }
 }
 
@@ -334,34 +530,65 @@ void handle_coolant(){
   }
 } 
 
-void handle_indicators() {
-  if (current.indicatorRaw != latest.indicatorRaw) {
-    char buf[18];
-    snprintf(buf, sizeof(buf), "%s 0x%02X", latest.indicatorsOn ? "ON" : "OFF", latest.indicatorRaw);
-    lv_label_set_text(displayIndicatorLabel, buf);
-  }
-}
+// void handle_indicators() {
+//   if (current.indicatorRaw != latest.indicatorRaw) {
+//     char buf[18];
+//     snprintf(buf, sizeof(buf), "%s 0x%02X", latest.indicatorsOn ? "ON" : "OFF", latest.indicatorRaw);
+//     lv_label_set_text(displayIndicatorLabel, buf);
+//   }
+// }
 
 void handle_spoiler() {
   if (current.spoilerRaw != latest.spoilerRaw) {
     char buf[18];
-    snprintf(buf, sizeof(buf), "%d pct 0x%02X", latest.spoilerPercent, latest.spoilerRaw);
+    snprintf(buf, sizeof(buf), "%d%%", latest.spoilerPercent);
     lv_label_set_text(displaySpoilerLabel, buf);
   }
 }
 
 void handle_can_status() {
   static uint32_t lastStatusRefreshMs = 0;
+  static uint32_t lastRateMs = 0;
+  static uint32_t lastRateFrames = 0;
+  static float canFramesPerSecond = 0.0f;
   uint32_t now = millis();
   if (current.frames != latest.frames || current.mappedFrames != latest.mappedFrames || now - lastStatusRefreshMs > 500) {
+    if (lastRateMs == 0) {
+      lastRateMs = now;
+      lastRateFrames = latest.frames;
+    } else if (now - lastRateMs >= 1000) {
+      uint32_t elapsed = now - lastRateMs;
+      uint32_t frameDelta = latest.frames - lastRateFrames;
+      canFramesPerSecond = (frameDelta * 1000.0f) / elapsed;
+      lastRateMs = now;
+      lastRateFrames = latest.frames;
+    }
+
     lastStatusRefreshMs = now;
-    char buf[48];
-    bool stale = latest.lastMappedFrameMs == 0 || now - latest.lastMappedFrameMs > 2000;
-    snprintf(buf, sizeof(buf), "%s %lu/%lu MAP %lu/%lu", stale ? "waiting" : "live",
-             (unsigned long)latest.mappedFrames, (unsigned long)latest.frames,
-             (unsigned long)latest.mapResponses, (unsigned long)latest.mapRequests);
-    lv_label_set_text(displayCanLabel, buf);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.0f fps", canFramesPerSecond);
+    lv_label_set_text(displayCanRateLabel, buf);
   }
+}
+
+static void finish_startup_if_ready() {
+  if (startupComplete || millis() - startupStartMs < 500) return;
+
+  if (displayReady) {
+    lvgl_port_lock(-1);
+    lv_obj_t *oldStartupScreen = startupScreen;
+    create_display_ui();
+    if (oldStartupScreen != nullptr) {
+      lv_obj_delete(oldStartupScreen);
+      startupScreen = nullptr;
+    }
+    lv_timer_handler();
+    lvgl_port_unlock();
+  }
+
+  canDriverInstalled = init_can();
+
+  startupComplete = true;
 }
 
 void setup()
@@ -392,30 +619,32 @@ void setup()
     Serial.println("Initializing LVGL");
     displayReady = lvgl_port_init(board->getLCD(), board->getTouch());
     if (!displayReady) {
-      Serial.println("LVGL init failed; continuing with serial-only output");
-      canDriverInstalled = init_can();
+      Serial.println("LVGL init failed; delaying CAN startup for serial-only output");
+      startupStartMs = millis();
       inited = true;
       return;
     }
     
     lvgl_port_lock(-1);
 
-    create_display_ui();
+    create_startup_ui();
     lv_timer_handler();
     
     lvgl_port_unlock();
-
-    canDriverInstalled = init_can();
-    lvgl_port_lock(-1);
-    lv_label_set_text(displayCanLabel, canDriverInstalled ? "waiting for CAN" : "TWAI failed");
-    lvgl_port_unlock();
     
+    startupStartMs = millis();
     Serial.println("Setup complete");
     inited = true;
 }
 
 void loop() {
   if (!inited) return;
+  finish_startup_if_ready();
+  if (!startupComplete) {
+    delay(5);
+    return;
+  }
+
   request_manifold_pressure();
   poll_can();
   log_can_status();
@@ -425,10 +654,12 @@ void loop() {
     return;
   }
   lvgl_port_lock(-1);
-  handle_rpm();
+  // handle_rpm();
   handle_boost();
+  handle_clock();
+  handle_lights_dim();
   handle_coolant();
-  handle_indicators();
+  // handle_indicators();
   handle_spoiler();
   handle_can_status();
   memcpy(&current, &latest, sizeof(Data));

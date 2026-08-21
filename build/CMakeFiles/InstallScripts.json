@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"/Users/joelsmith/main/personal/lvgl95/peugeot-display/build/cmake_install.cmake",
-		"/Users/joelsmith/main/personal/lvgl95/peugeot-display/build/lvgl/cmake_install.cmake"
-	],
-	"Parallel" : false
-}

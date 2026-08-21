@@ -135,4 +135,10 @@
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../core/lv_obj.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../draw/lv_draw.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/lv_display.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/lv_sysmon_private.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/lv_sysmon.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../misc/lv_timer.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../core/lv_observer.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../core/../misc/lv_ext_data.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../core/lv_obj.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../stdlib/lv_string.h

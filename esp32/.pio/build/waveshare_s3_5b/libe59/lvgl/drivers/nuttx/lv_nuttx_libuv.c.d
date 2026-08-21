@@ -545,6 +545,7 @@
  .pio/libdeps/waveshare_s3_5b/lvgl/src/drivers/nuttx/../../../src/display/../core/lv_obj.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/drivers/nuttx/../../../src/display/../draw/lv_draw.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/drivers/nuttx/../../../src/display/lv_display.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/drivers/nuttx/../../../src/display/../debugging/sysmon/lv_sysmon_private.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/drivers/nuttx/../../../src/indev/lv_indev_private.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/drivers/nuttx/../../../src/indev/../misc/lv_ext_data.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/drivers/nuttx/../../../src/indev/lv_indev.h \

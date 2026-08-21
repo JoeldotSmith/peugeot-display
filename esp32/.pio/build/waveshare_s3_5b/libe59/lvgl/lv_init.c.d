@@ -232,6 +232,7 @@
  .pio/libdeps/waveshare_s3_5b/lvgl/src/display/../core/lv_obj.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/display/../draw/lv_draw.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/display/lv_display.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/display/../debugging/sysmon/lv_sysmon_private.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/indev/lv_indev_private.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/indev/../misc/lv_ext_data.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/indev/lv_indev.h \

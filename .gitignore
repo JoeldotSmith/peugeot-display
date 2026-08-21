@@ -1,0 +1,15 @@
+# Build output
+build/
+**/build/
+cmake-build-*/
+**/cmake-build-*/
+CMakeFiles/
+**/CMakeFiles/
+CMakeCache.txt
+**/CMakeCache.txt
+compile_commands.json
+**/compile_commands.json
+
+# PlatformIO output
+.pio/
+**/.pio/

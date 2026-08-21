@@ -132,6 +132,12 @@
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../core/lv_obj.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../draw/lv_draw.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/lv_display.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/lv_sysmon_private.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/lv_sysmon.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../misc/lv_timer.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../core/lv_observer.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../core/../misc/lv_ext_data.h \
+ .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../display/../debugging/sysmon/../../core/lv_obj.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../misc/lv_anim_private.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../misc/lv_async.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/lv_global.h \
@@ -182,10 +188,6 @@
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../osal/../misc/lv_types.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../osal/lv_os_none.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/sysmon/lv_sysmon.h \
- .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/sysmon/../../misc/lv_timer.h \
- .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/sysmon/../../core/lv_observer.h \
- .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/sysmon/../../core/../misc/lv_ext_data.h \
- .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/sysmon/../../core/lv_obj.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../stdlib/builtin/lv_tlsf.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../stdlib/builtin/../../lv_conf_internal.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../stdlib/builtin/../../misc/lv_ll.h \
@@ -226,7 +228,6 @@
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../stdlib/builtin/lv_tlsf.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../stdlib/builtin/../../osal/lv_os_private.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/sysmon/lv_sysmon_private.h \
- .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/sysmon/lv_sysmon.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/test/lv_test_private.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../debugging/test/../../lv_conf_internal.h \
  .pio/libdeps/waveshare_s3_5b/lvgl/src/core/../core/../layouts/lv_layout_private.h \
