@@ -2,9 +2,14 @@
 #include <Arduino.h>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
+#include <math.h>
 #include "lv_conf.h"
 #include "lvgl_v8_port.h"
 #include "driver/twai.h"
+
+LV_FONT_DECLARE(mono_14);
+LV_FONT_DECLARE(mono_24);
+LV_FONT_DECLARE(mono_48);
 
 using namespace esp_panel::drivers;
 using namespace esp_panel::board;
@@ -56,6 +61,10 @@ static const uint32_t MAP_REQUEST_INTERVAL_MS = 250;
 static const float ATMOSPHERIC_PRESSURE_KPA = 101.0f;
 static const float KPA_TO_PSI = 0.1450377f;
 static const float KPA_TO_INHG = 0.295300f;
+static const float BOOST_DISPLAY_STEP = 0.1f;
+static const uint32_t BOOST_DISPLAY_INTERVAL_MS = 33;
+static const float BOOST_DISPLAY_CATCHUP_STEPS =
+    (float)MAP_REQUEST_INTERVAL_MS / (float)BOOST_DISPLAY_INTERVAL_MS;
 static const int BOOST_BAR_MAX = 200;
 static const lv_opa_t DISPLAY_DIM_OPA = 123;
 
@@ -86,6 +95,13 @@ static int boost_bar_value(float boostPressureKpa) {
   if (value < 0.0f) value = 0.0f;
   if (value > BOOST_BAR_MAX) value = BOOST_BAR_MAX;
   return (int)(value + 0.5f);
+}
+
+static float boost_display_step_kpa(float fromKpa, float toKpa) {
+  bool vacuum = fromKpa < 0.0f || toKpa < 0.0f;
+  float displayUnitStepKpa = BOOST_DISPLAY_STEP / (vacuum ? KPA_TO_INHG : KPA_TO_PSI);
+  float catchupStepKpa = fabsf(toKpa - fromKpa) / BOOST_DISPLAY_CATCHUP_STEPS;
+  return catchupStepKpa > displayUnitStepKpa ? catchupStepKpa : displayUnitStepKpa;
 }
 
 static void decode_can_message(const twai_message_t &message) {
@@ -357,8 +373,8 @@ static void make_wire_line(lv_obj_t *parent, int x, int y, int w, int h, uint32_
 }
 
 static lv_obj_t *make_data_value(lv_obj_t *parent, const char *name, const char *value, int x, int y) {
-  make_label(parent, name, x, y, 160, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
-  return make_label(parent, value, x, y + 26, 220, 34, &lv_font_montserrat_24, lv_color_hex(0xE8F8FF));
+  make_label(parent, name, x, y, 160, 24, &mono_14, lv_color_hex(0x5288A1));
+  return make_label(parent, value, x, y + 26, 220, 34, &mono_24, lv_color_hex(0xE8F8FF));
 }
 
 static void create_startup_ui() {
@@ -393,13 +409,13 @@ static void create_startup_ui() {
     make_wire_line(screen, 424 + i * 24, 238, 12, 2, color);
   }
 
-  lv_obj_t *boot = make_label(screen, "BOOT SEQUENCE", 0, 110, 1024, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
+  lv_obj_t *boot = make_label(screen, "BOOT SEQUENCE", 0, 110, 1024, 24, &mono_14, lv_color_hex(0x5288A1));
   lv_obj_set_style_text_align(boot, LV_TEXT_ALIGN_CENTER, 0);
 
-  lv_obj_t *status = make_label(screen, "SYSTEM INITIALIZING", 0, 146, 1024, 34, &lv_font_montserrat_24, lv_color_hex(0xE8F8FF));
+  lv_obj_t *status = make_label(screen, "SYSTEM INITIALIZING", 0, 146, 1024, 34, &mono_24, lv_color_hex(0xE8F8FF));
   lv_obj_set_style_text_align(status, LV_TEXT_ALIGN_CENTER, 0);
 
-  lv_obj_t *substatus = make_label(screen, "CAN INTERFACE", 0, 186, 1024, 22, LV_FONT_DEFAULT, lv_color_hex(0x34CFFF));
+  lv_obj_t *substatus = make_label(screen, "CAN INTERFACE", 0, 186, 1024, 22, &mono_14, lv_color_hex(0x34CFFF));
   lv_obj_set_style_text_align(substatus, LV_TEXT_ALIGN_CENTER, 0);
 
   make_wire_line(screen, 268, 170, 54, 1, 0x116A93);
@@ -426,12 +442,12 @@ static void create_display_ui() {
   make_panel(screen, 446, 62, 274, 198);
   make_panel(screen, 772, 62, 206, 198);
 
-  make_label(screen, "BOOST PRESSURE", 58, 58, 260, 28, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
-  displayBoostLabel = make_label(screen, "--", 44, 104, 270, 70, &lv_font_montserrat_48, lv_color_hex(0xE8F8FF));
+  make_label(screen, "BOOST PRESSURE", 58, 58, 260, 28, &mono_24, lv_color_hex(0x34CFFF));
+  displayBoostLabel = make_label(screen, "--", 44, 104, 270, 70, &mono_48, lv_color_hex(0xE8F8FF));
   lv_obj_set_style_text_align(displayBoostLabel, LV_TEXT_ALIGN_RIGHT, 0);
-  displayBoostUnitLabel = make_label(screen, "PSI", 320, 135, 64, 30, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
-  make_label(screen, "VAC", 58, 222, 64, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
-  make_label(screen, "BOOST", 286, 222, 88, 24, LV_FONT_DEFAULT, lv_color_hex(0x5288A1));
+  displayBoostUnitLabel = make_label(screen, "PSI", 320, 135, 64, 30, &mono_24, lv_color_hex(0x34CFFF));
+  make_label(screen, "VAC", 58, 222, 64, 24, &mono_14, lv_color_hex(0x5288A1));
+  make_label(screen, "BOOST", 286, 222, 88, 24, &mono_14, lv_color_hex(0x5288A1));
 
   displayBoostBar = lv_bar_create(screen);
   lv_obj_set_pos(displayBoostBar, 58, 250);
@@ -448,11 +464,11 @@ static void create_display_ui() {
   lv_obj_set_style_bg_grad_dir(displayBoostBar, LV_GRAD_DIR_HOR, LV_PART_INDICATOR);
   lv_obj_set_style_radius(displayBoostBar, 0, LV_PART_INDICATOR);
 
-  make_label(screen, "ENGINE", 470, 82, 120, 24, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
+  make_label(screen, "ENGINE", 470, 82, 120, 24, &mono_24, lv_color_hex(0x34CFFF));
   displayCanRateLabel = make_data_value(screen, "CANBUS RATE", "-- fps", 470, 122);
   displayCoolantLabel = make_data_value(screen, "COOLANT", "---.- C", 470, 188);
 
-  make_label(screen, "AERO", 796, 82, 120, 24, &lv_font_montserrat_24, lv_color_hex(0x34CFFF));
+  make_label(screen, "AERO", 796, 82, 120, 24, &mono_24, lv_color_hex(0x34CFFF));
   displaySpoilerLabel = make_data_value(screen, "SPOILER", "---", 796, 122);
   displayClockLabel = make_data_value(screen, "CLOCK", "--:--", 796, 180);
 
@@ -476,28 +492,67 @@ static void create_display_ui() {
 // }
 
 void handle_boost() {
-  if (current.boostPressureKpa != latest.boostPressureKpa ||
-      current.manifoldPressureKpa != latest.manifoldPressureKpa ||
-      current.hasManifoldPressure != latest.hasManifoldPressure) {
-    char buf[48];
-    if (latest.hasManifoldPressure) {
-      float boostPsi = latest.boostPressureKpa * KPA_TO_PSI;
-      float vacuumInHg = latest.boostPressureKpa < 0.0f ? -latest.boostPressureKpa * KPA_TO_INHG : 0.0f;
-      bool inVacuum = latest.boostPressureKpa < 0.0f;
+  static bool hasDisplayBoostPressure = false;
+  static float displayBoostPressureKpa = 0.0f;
+  static float targetBoostPressureKpa = 0.0f;
+  static float boostDisplayStepKpa = 0.0f;
+  static float renderedBoostPressureKpa = 1000000.0f;
+  static bool renderedHasManifoldPressure = false;
+  static uint32_t lastBoostDisplayStepMs = 0;
+
+  char buf[48];
+  if (latest.hasManifoldPressure) {
+    uint32_t now = millis();
+    if (!hasDisplayBoostPressure || current.hasManifoldPressure != latest.hasManifoldPressure) {
+      displayBoostPressureKpa = latest.boostPressureKpa;
+      targetBoostPressureKpa = latest.boostPressureKpa;
+      boostDisplayStepKpa = boost_display_step_kpa(displayBoostPressureKpa, targetBoostPressureKpa);
+      hasDisplayBoostPressure = true;
+      lastBoostDisplayStepMs = now;
+    } else {
+      if (latest.boostPressureKpa != targetBoostPressureKpa) {
+        targetBoostPressureKpa = latest.boostPressureKpa;
+        boostDisplayStepKpa = boost_display_step_kpa(displayBoostPressureKpa, targetBoostPressureKpa);
+      }
+
+      if (now - lastBoostDisplayStepMs < BOOST_DISPLAY_INTERVAL_MS) {
+        return;
+      }
+
+      lastBoostDisplayStepMs = now;
+      float delta = targetBoostPressureKpa - displayBoostPressureKpa;
+      if (fabsf(delta) <= boostDisplayStepKpa) {
+        displayBoostPressureKpa = targetBoostPressureKpa;
+      } else {
+        displayBoostPressureKpa += delta > 0.0f ? boostDisplayStepKpa : -boostDisplayStepKpa;
+      }
+    }
+
+    if (!renderedHasManifoldPressure || renderedBoostPressureKpa != displayBoostPressureKpa) {
+      float boostPsi = displayBoostPressureKpa * KPA_TO_PSI;
+      float vacuumInHg = displayBoostPressureKpa < 0.0f ? -displayBoostPressureKpa * KPA_TO_INHG : 0.0f;
+      bool inVacuum = displayBoostPressureKpa < 0.0f;
       snprintf(buf, sizeof(buf), "%.1f", inVacuum ? vacuumInHg : boostPsi);
       lv_label_set_text(displayBoostLabel, buf);
       lv_label_set_text(displayBoostUnitLabel, inVacuum ? "inHg" : "PSI");
-      lv_bar_set_value(displayBoostBar, boost_bar_value(latest.boostPressureKpa), LV_ANIM_OFF);
+      lv_bar_set_value(displayBoostBar, boost_bar_value(displayBoostPressureKpa), LV_ANIM_OFF);
       lv_obj_set_style_bg_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x29E675), LV_PART_INDICATOR);
       lv_obj_set_style_bg_grad_color(displayBoostBar, lv_color_hex(inVacuum ? 0xFF6B76 : 0x34CFFF), LV_PART_INDICATOR);
       lv_obj_set_style_shadow_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), LV_PART_INDICATOR);
       lv_obj_set_style_text_color(displayBoostUnitLabel, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), 0);
-    } else {
-      lv_label_set_text(displayBoostLabel, "--");
-      lv_label_set_text(displayBoostUnitLabel, "PSI");
-      lv_bar_set_value(displayBoostBar, 0, LV_ANIM_OFF);
     }
+  } else if (renderedHasManifoldPressure || current.hasManifoldPressure != latest.hasManifoldPressure) {
+    hasDisplayBoostPressure = false;
+    displayBoostPressureKpa = 0.0f;
+    targetBoostPressureKpa = 0.0f;
+    boostDisplayStepKpa = 0.0f;
+    lv_label_set_text(displayBoostLabel, "--");
+    lv_label_set_text(displayBoostUnitLabel, "PSI");
+    lv_bar_set_value(displayBoostBar, 0, LV_ANIM_OFF);
   }
+
+  renderedHasManifoldPressure = latest.hasManifoldPressure;
+  renderedBoostPressureKpa = displayBoostPressureKpa;
 }
 
 void handle_clock() {
