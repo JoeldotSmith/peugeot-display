@@ -1,15 +1,60 @@
+# PlatformIO
+.pio/
+**/.pio/
+.pioenvs/
+**/.pioenvs/
+.piolibdeps/
+**/.piolibdeps/
+.clang_complete
+.gcc-flags.json
+
 # Build output
 build/
 **/build/
 cmake-build-*/
 **/cmake-build-*/
+dist/
+out/
+
+# CMake / ESP-IDF generated files
 CMakeFiles/
 **/CMakeFiles/
 CMakeCache.txt
 **/CMakeCache.txt
+cmake_install.cmake
+**/cmake_install.cmake
 compile_commands.json
 **/compile_commands.json
+sdkconfig.old
+sdkconfig.defaults.old
+managed_components/
+dependencies.lock
 
-# PlatformIO output
-.pio/
-**/.pio/
+# Firmware and build artifacts
+*.bin
+*.elf
+*.map
+*.hex
+*.uf2
+*.o
+*.obj
+*.a
+*.d
+*.lst
+*.su
+*.sconsign*.dblite
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*.orig
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
