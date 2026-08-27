@@ -26,23 +26,34 @@ The Waveshare board has onboard flash, so the clock offset is stored in ESP32 NV
 
 ## Clock Setup
 
-The Peugeot clock signal used here behaves like a counter. When the vehicle battery is disconnected, the fixed offset can become wrong. To avoid reflashing firmware just to correct the displayed time, the ESP32 hosts a small Wi-Fi setup page and stores the selected offset in NVS.
-
-After flashing, the firmware creates a Wi-Fi access point:
-
-- SSID: `PeugeotDisplayClock`
-- Password: `peugeot95`
-- Setup URL: `http://192.168.4.1/`
+The Peugeot clock signal used here behaves like a counter. When the vehicle battery is disconnected, the fixed offset can become wrong. To avoid reflashing firmware just to correct the displayed time, the ESP32 accepts a USB serial clock command and stores the selected offset in NVS.
 
 To set the clock:
 
 1. Power the display while the vehicle CAN bus is active.
-2. Connect a phone or laptop to the `PeugeotDisplayClock` Wi-Fi network.
-3. Open `http://192.168.4.1/`.
-4. Wait until the page shows a live counter/clock value.
-5. Press `Set offset to this device time`.
+2. Connect to the ESP32 USB serial console at `1000000` baud.
+3. Wait until at least one `0x552` clock frame has been received.
+4. Send the current 24-hour local time:
 
-The browser sends the current local time-of-day from the phone or laptop. The ESP32 compares that to the latest CAN clock counter and stores the difference as `clock/offset` in NVS using Arduino `Preferences`.
+```text
+clock HH:MM[:SS]
+```
+
+Example:
+
+```text
+clock 18:42:00
+```
+
+Useful serial commands:
+
+```text
+clock status
+clock reset
+clock help
+```
+
+The firmware compares the entered local time-of-day to the latest CAN clock counter and stores the difference as `clock/offset` in NVS using Arduino `Preferences`.
 
 On every boot:
 
@@ -50,15 +61,17 @@ On every boot:
 2. CAN frame `0x552` supplies the raw clock counter.
 3. The display shows `(counter + saved_offset) mod 86400`.
 
+USB serial is only needed when changing the stored offset.
+
 The first boot default offset is `-42690` seconds, matching the older hardcoded adjustment:
 
 ```cpp
 -43200 + 510
 ```
 
-Once the setup page is used, the saved NVS value replaces that default.
+Once the serial command is used, the saved NVS value replaces that default.
 
-The setup endpoint refuses to save until at least one `0x552` clock frame has been received. This prevents saving a bogus offset before the counter is available.
+The clock command refuses to save until at least one `0x552` clock frame has been received. This prevents saving a bogus offset before the counter is available.
 
 ## CAN Bus Signals
 
@@ -143,7 +156,7 @@ The serial monitor is configured for `1000000` baud and uses the ESP32 exception
 
 ## Useful Files
 
-- `src/main.cpp` - firmware entry point, CAN decoding, LVGL UI, Wi-Fi clock setup server
+- `src/main.cpp` - firmware entry point, CAN decoding, LVGL UI, USB serial clock setup
 - `src/lvgl_v8_port.cpp` - LVGL/display port glue
 - `include/lv_conf.h` - LVGL configuration used by the PlatformIO build
 - `conf/esp_panel_board_custom_conf.h` - Waveshare/display panel configuration

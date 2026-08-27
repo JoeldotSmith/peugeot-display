@@ -1,8 +1,6 @@
 #define CONFIG_LVGL_PORT_ROTATION_DEGREE 0
 #include <Arduino.h>
 #include <Preferences.h>
-#include <WebServer.h>
-#include <WiFi.h>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
 #include <math.h>
@@ -35,7 +33,6 @@ static lv_obj_t *displayBoostBar = nullptr;
 static lv_obj_t *displayDimOverlay = nullptr;
 static lv_obj_t *startupScreen = nullptr;
 static Preferences clockPrefs;
-static WebServer clockServer(80);
 
 struct Data {
   float coolantTemp;
@@ -70,15 +67,15 @@ static const float BOOST_DISPLAY_STEP = 0.1f;
 static const uint32_t BOOST_DISPLAY_INTERVAL_MS = 33;
 static const float BOOST_DISPLAY_CATCHUP_STEPS =
     (float)MAP_REQUEST_INTERVAL_MS / (float)BOOST_DISPLAY_INTERVAL_MS;
+static const uint32_t DISPLAY_UPDATE_INTERVAL_MS = 16;
 static const int BOOST_BAR_MAX = 200;
 static const lv_opa_t DISPLAY_DIM_OPA = 123;
 static const char *CLOCK_PREF_NAMESPACE = "clock";
 static const char *CLOCK_OFFSET_KEY = "offset";
-static const char *CLOCK_AP_SSID = "PeugeotDisplayClock";
-static const char *CLOCK_AP_PASSWORD = "peugeot95";
 static const int32_t DEFAULT_CLOCK_OFFSET_SECONDS = -43200 + 510;
+static const size_t SERIAL_COMMAND_BUFFER_SIZE = 48;
 static int32_t clockOffsetSeconds = DEFAULT_CLOCK_OFFSET_SECONDS;
-static bool clockServiceStarted = false;
+static bool clockPrefsStarted = false;
 
 static int spoiler_percent_from_raw(uint8_t raw) {
   if (raw <= 0x10) return 0;
@@ -283,103 +280,124 @@ static void log_can_status() {
   );
 }
 
-static String clock_status_json() {
-  uint32_t counterSeconds = latest.secondsOfDay % 86400UL;
-  uint32_t displaySeconds = apply_clock_offset(counterSeconds);
-  char displayClock[16];
-  format_clock(displayClock, sizeof(displayClock), displaySeconds);
-
-  String body = "{";
-  body += "\"hasClock\":";
-  body += latest.hasClock ? "true" : "false";
-  body += ",\"counterSeconds\":";
-  body += String(counterSeconds);
-  body += ",\"displaySeconds\":";
-  body += String(displaySeconds);
-  body += ",\"offsetSeconds\":";
-  body += String(clockOffsetSeconds);
-  body += ",\"displayClock\":\"";
-  body += displayClock;
-  body += "\"}";
-  return body;
-}
-
-static void handle_clock_page() {
-  clockServer.send(200, "text/html",
-      "<!doctype html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>"
-      "<title>Peugeot Clock</title><style>"
-      "body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:24px;background:#111;color:#eee}"
-      "main{max-width:420px}button{font:inherit;font-weight:700;width:100%;padding:14px 16px;border:0;border-radius:6px;background:#2eaadc;color:#001018}"
-      ".row{display:flex;justify-content:space-between;border-bottom:1px solid #333;padding:10px 0}.muted{color:#aaa}#msg{min-height:24px;margin-top:16px}"
-      "</style></head><body><main><h1>Peugeot Clock</h1>"
-      "<div class='row'><span>Dash clock</span><strong id='display'>--</strong></div>"
-      "<div class='row'><span>Counter</span><span id='counter'>--</span></div>"
-      "<div class='row'><span>Offset</span><span id='offset'>--</span></div>"
-      "<p class='muted'>Tap the button to set the dash clock from this phone or laptop.</p>"
-      "<button id='set'>Set offset to this device time</button><p id='msg'></p>"
-      "<script>"
-      "const pad=n=>String(n).padStart(2,'0');"
-      "function fmt(s){s=((s%86400)+86400)%86400;let h=Math.floor(s/3600),m=Math.floor(s%3600/60);let a=h<12?'am':'pm';h=h%12||12;return `${pad(h)}:${pad(m)} ${a}`}"
-      "async function refresh(){let r=await fetch('/status'),j=await r.json();display.textContent=j.hasClock?j.displayClock:'No clock signal';counter.textContent=j.hasClock?fmt(j.counterSeconds):'--';offset.textContent=`${j.offsetSeconds}s`;}"
-      "set.onclick=async()=>{let d=new Date(),s=d.getHours()*3600+d.getMinutes()*60+d.getSeconds();msg.textContent='Saving...';let r=await fetch(`/set?seconds=${s}`,{method:'POST'});msg.textContent=await r.text();await refresh();};"
-      "refresh();setInterval(refresh,2000);"
-      "</script></main></body></html>");
-}
-
-static void handle_clock_status() {
-  clockServer.send(200, "application/json", clock_status_json());
-}
-
-static void handle_clock_set() {
-  if (!latest.hasClock) {
-    clockServer.send(409, "text/plain", "No clock counter has been received yet.");
-    return;
-  }
-  if (!clockServer.hasArg("seconds")) {
-    clockServer.send(400, "text/plain", "Missing seconds parameter.");
-    return;
-  }
-
-  int32_t targetSeconds = clockServer.arg("seconds").toInt();
-  if (targetSeconds < 0 || targetSeconds >= 86400) {
-    clockServer.send(400, "text/plain", "Seconds must be 0-86399.");
-    return;
-  }
-
+static void save_clock_offset_for_target(uint32_t targetSeconds) {
   int32_t counterSeconds = (int32_t)(latest.secondsOfDay % 86400UL);
-  int32_t offset = targetSeconds - counterSeconds;
+  int32_t offset = (int32_t)(targetSeconds % 86400UL) - counterSeconds;
   if (offset > 43200) offset -= 86400;
   if (offset < -43200) offset += 86400;
 
   clockOffsetSeconds = offset;
   clockPrefs.putInt(CLOCK_OFFSET_KEY, clockOffsetSeconds);
   current.hasClock = false;
-
-  char buf[64];
-  snprintf(buf, sizeof(buf), "Saved offset: %ld seconds", (long)clockOffsetSeconds);
-  clockServer.send(200, "text/plain", buf);
 }
 
-static void init_clock_service() {
-  clockPrefs.begin(CLOCK_PREF_NAMESPACE, false);
-  clockOffsetSeconds = clockPrefs.getInt(CLOCK_OFFSET_KEY, DEFAULT_CLOCK_OFFSET_SECONDS);
+static bool parse_clock_time(const char *text, uint32_t *secondsOfDay) {
+  int hour = -1;
+  int minute = -1;
+  int second = 0;
+  char extra = '\0';
 
-  WiFi.mode(WIFI_AP);
-  if (!WiFi.softAP(CLOCK_AP_SSID, CLOCK_AP_PASSWORD)) {
-    Serial.println("Clock WiFi AP failed to start");
+  if (sscanf(text, "%d:%d:%d%c", &hour, &minute, &second, &extra) == 3 ||
+      sscanf(text, "%d:%d%c", &hour, &minute, &extra) == 2) {
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && second >= 0 && second <= 59) {
+      *secondsOfDay = (uint32_t)hour * 3600UL + (uint32_t)minute * 60UL + (uint32_t)second;
+      return true;
+    }
+  }
+  return false;
+}
+
+static void print_clock_status() {
+  Serial.printf("Clock offset: %ld seconds\n", (long)clockOffsetSeconds);
+  if (!latest.hasClock) {
+    Serial.println("Clock counter: not received yet");
     return;
   }
 
-  clockServer.on("/", HTTP_GET, handle_clock_page);
-  clockServer.on("/status", HTTP_GET, handle_clock_status);
-  clockServer.on("/set", HTTP_POST, handle_clock_set);
-  clockServer.begin();
-  clockServiceStarted = true;
+  char counterClock[16];
+  char displayClock[16];
+  uint32_t counterSeconds = latest.secondsOfDay % 86400UL;
+  format_clock(counterClock, sizeof(counterClock), counterSeconds);
+  format_clock(displayClock, sizeof(displayClock), apply_clock_offset(counterSeconds));
+  Serial.printf("Clock counter: %s (%lu seconds)\n", counterClock, (unsigned long)counterSeconds);
+  Serial.printf("Display clock: %s\n", displayClock);
+}
 
-  Serial.printf("Clock WiFi AP started: ssid=%s password=%s ip=%s\n",
-                CLOCK_AP_SSID,
-                CLOCK_AP_PASSWORD,
-                WiFi.softAPIP().toString().c_str());
+static void init_clock_preferences() {
+  if (clockPrefsStarted) return;
+  clockPrefs.begin(CLOCK_PREF_NAMESPACE, false);
+  clockOffsetSeconds = clockPrefs.getInt(CLOCK_OFFSET_KEY, DEFAULT_CLOCK_OFFSET_SECONDS);
+  clockPrefsStarted = true;
+}
+
+static void print_clock_serial_help() {
+  Serial.println("Clock serial commands:");
+  Serial.println("  clock HH:MM[:SS]  save display clock offset to NVS");
+  Serial.println("  clock status      print counter, display time, and offset");
+  Serial.println("  clock reset       restore default offset");
+}
+
+static void handle_clock_serial_command(char *command) {
+  while (*command == ' ' || *command == '\t') command++;
+  if (strncmp(command, "clock", 5) != 0 || (command[5] != '\0' && command[5] != ' ' && command[5] != '\t')) {
+    return;
+  }
+
+  char *arg = command + 5;
+  while (*arg == ' ' || *arg == '\t') arg++;
+
+  if (*arg == '\0' || strcmp(arg, "help") == 0) {
+    print_clock_serial_help();
+    return;
+  }
+  if (strcmp(arg, "status") == 0) {
+    print_clock_status();
+    return;
+  }
+  if (strcmp(arg, "reset") == 0) {
+    clockOffsetSeconds = DEFAULT_CLOCK_OFFSET_SECONDS;
+    clockPrefs.putInt(CLOCK_OFFSET_KEY, clockOffsetSeconds);
+    current.hasClock = false;
+    Serial.printf("Clock offset reset to default: %ld seconds\n", (long)clockOffsetSeconds);
+    return;
+  }
+
+  uint32_t targetSeconds = 0;
+  if (!parse_clock_time(arg, &targetSeconds)) {
+    Serial.println("Invalid clock command. Use: clock HH:MM[:SS]");
+    return;
+  }
+  if (!latest.hasClock) {
+    Serial.println("No 0x552 clock counter received yet; offset not saved.");
+    return;
+  }
+
+  save_clock_offset_for_target(targetSeconds);
+  char targetClock[16];
+  format_clock(targetClock, sizeof(targetClock), targetSeconds);
+  Serial.printf("Clock offset saved: display=%s offset=%ld seconds\n",
+                targetClock,
+                (long)clockOffsetSeconds);
+}
+
+static void handle_serial_commands() {
+  static char commandBuffer[SERIAL_COMMAND_BUFFER_SIZE];
+  static size_t commandLength = 0;
+
+  while (Serial.available() > 0) {
+    char ch = (char)Serial.read();
+    if (ch == '\r') continue;
+    if (ch == '\n') {
+      commandBuffer[commandLength] = '\0';
+      handle_clock_serial_command(commandBuffer);
+      commandLength = 0;
+    } else if (commandLength < sizeof(commandBuffer) - 1) {
+      commandBuffer[commandLength++] = ch;
+    } else {
+      commandLength = 0;
+      Serial.println("Serial command too long; dropped.");
+    }
+  }
 }
 
 #if DIAG_CONSOLE_ONLY
@@ -396,6 +414,8 @@ void setup()
     Serial.println("peugeot-display console diagnostic boot");
     Serial.println("LVGL/display init is disabled in this build");
     Serial.printf("millis=%lu\n", (unsigned long)millis());
+    init_clock_preferences();
+    print_clock_serial_help();
 
     canDriverInstalled = init_can();
     Serial.printf("TWAI init: %s\n", canDriverInstalled ? "ok" : "failed");
@@ -405,6 +425,7 @@ void loop()
 {
   request_manifold_pressure();
   poll_can();
+  handle_serial_commands();
 
   static uint32_t lastDiagMs = 0;
   uint32_t now = millis();
@@ -616,6 +637,8 @@ void handle_boost() {
   static float boostDisplayStepKpa = 0.0f;
   static float renderedBoostPressureKpa = 1000000.0f;
   static bool renderedHasManifoldPressure = false;
+  static bool renderedInVacuum = false;
+  static int renderedBoostBarValue = -1;
   static uint32_t lastBoostDisplayStepMs = 0;
 
   char buf[48];
@@ -652,18 +675,28 @@ void handle_boost() {
       bool inVacuum = displayBoostPressureKpa < 0.0f;
       snprintf(buf, sizeof(buf), "%.1f", inVacuum ? vacuumInHg : boostPsi);
       lv_label_set_text(displayBoostLabel, buf);
-      lv_label_set_text(displayBoostUnitLabel, inVacuum ? "inHg" : "PSI");
-      lv_bar_set_value(displayBoostBar, boost_bar_value(displayBoostPressureKpa), LV_ANIM_OFF);
-      lv_obj_set_style_bg_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x29E675), LV_PART_INDICATOR);
-      lv_obj_set_style_bg_grad_color(displayBoostBar, lv_color_hex(inVacuum ? 0xFF6B76 : 0x34CFFF), LV_PART_INDICATOR);
-      lv_obj_set_style_shadow_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), LV_PART_INDICATOR);
-      lv_obj_set_style_text_color(displayBoostUnitLabel, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), 0);
+
+      int boostBarValue = boost_bar_value(displayBoostPressureKpa);
+      if (renderedBoostBarValue != boostBarValue) {
+        lv_bar_set_value(displayBoostBar, boostBarValue, LV_ANIM_OFF);
+        renderedBoostBarValue = boostBarValue;
+      }
+
+      if (!renderedHasManifoldPressure || renderedInVacuum != inVacuum) {
+        lv_label_set_text(displayBoostUnitLabel, inVacuum ? "inHg" : "PSI");
+        lv_obj_set_style_bg_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x29E675), LV_PART_INDICATOR);
+        lv_obj_set_style_bg_grad_color(displayBoostBar, lv_color_hex(inVacuum ? 0xFF6B76 : 0x34CFFF), LV_PART_INDICATOR);
+        lv_obj_set_style_shadow_color(displayBoostBar, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), LV_PART_INDICATOR);
+        lv_obj_set_style_text_color(displayBoostUnitLabel, lv_color_hex(inVacuum ? 0xE3313D : 0x34CFFF), 0);
+        renderedInVacuum = inVacuum;
+      }
     }
   } else if (renderedHasManifoldPressure || current.hasManifoldPressure != latest.hasManifoldPressure) {
     hasDisplayBoostPressure = false;
     displayBoostPressureKpa = 0.0f;
     targetBoostPressureKpa = 0.0f;
     boostDisplayStepKpa = 0.0f;
+    renderedBoostBarValue = -1;
     lv_label_set_text(displayBoostLabel, "--");
     lv_label_set_text(displayBoostUnitLabel, "PSI");
     lv_bar_set_value(displayBoostBar, 0, LV_ANIM_OFF);
@@ -720,28 +753,48 @@ void handle_spoiler() {
 }
 
 void handle_can_status() {
-  static uint32_t lastStatusRefreshMs = 0;
   static uint32_t lastRateMs = 0;
   static uint32_t lastRateFrames = 0;
   static float canFramesPerSecond = 0.0f;
+  static float renderedCanFramesPerSecond = -1.0f;
   uint32_t now = millis();
-  if (current.frames != latest.frames || current.mappedFrames != latest.mappedFrames || now - lastStatusRefreshMs > 500) {
-    if (lastRateMs == 0) {
-      lastRateMs = now;
-      lastRateFrames = latest.frames;
-    } else if (now - lastRateMs >= 1000) {
-      uint32_t elapsed = now - lastRateMs;
-      uint32_t frameDelta = latest.frames - lastRateFrames;
-      canFramesPerSecond = (frameDelta * 1000.0f) / elapsed;
-      lastRateMs = now;
-      lastRateFrames = latest.frames;
-    }
 
-    lastStatusRefreshMs = now;
+  if (lastRateMs == 0) {
+    lastRateMs = now;
+    lastRateFrames = latest.frames;
+  } else if (now - lastRateMs >= 1000) {
+    uint32_t elapsed = now - lastRateMs;
+    uint32_t frameDelta = latest.frames - lastRateFrames;
+    canFramesPerSecond = (frameDelta * 1000.0f) / elapsed;
+    lastRateMs = now;
+    lastRateFrames = latest.frames;
+  }
+
+  if (renderedCanFramesPerSecond != canFramesPerSecond) {
+    renderedCanFramesPerSecond = canFramesPerSecond;
     char buf[16];
     snprintf(buf, sizeof(buf), "%.0f fps", canFramesPerSecond);
     lv_label_set_text(displayCanRateLabel, buf);
   }
+}
+
+static void update_display() {
+  static uint32_t lastDisplayUpdateMs = 0;
+  uint32_t now = millis();
+  if (now - lastDisplayUpdateMs < DISPLAY_UPDATE_INTERVAL_MS) return;
+  if (!lvgl_port_lock(0)) return;
+  lastDisplayUpdateMs = now;
+
+  // handle_rpm();
+  handle_boost();
+  handle_clock();
+  handle_lights_dim();
+  handle_coolant();
+  // handle_indicators();
+  handle_spoiler();
+  handle_can_status();
+  memcpy(&current, &latest, sizeof(Data));
+  lvgl_port_unlock();
 }
 
 static void finish_startup_if_ready() {
@@ -760,7 +813,7 @@ static void finish_startup_if_ready() {
   }
 
   canDriverInstalled = init_can();
-  init_clock_service();
+  init_clock_preferences();
 
   startupComplete = true;
 }
@@ -808,6 +861,7 @@ void setup()
     
     startupStartMs = millis();
     Serial.println("Setup complete");
+    print_clock_serial_help();
     inited = true;
 }
 
@@ -820,25 +874,15 @@ void loop() {
   }
 
   request_manifold_pressure();
-  if (clockServiceStarted) clockServer.handleClient();
   poll_can();
+  handle_serial_commands();
   log_can_status();
   if (!displayReady) {
     log_displayless_status();
     delay(5);
     return;
   }
-  lvgl_port_lock(-1);
-  // handle_rpm();
-  handle_boost();
-  handle_clock();
-  handle_lights_dim();
-  handle_coolant();
-  // handle_indicators();
-  handle_spoiler();
-  handle_can_status();
-  memcpy(&current, &latest, sizeof(Data));
-  lvgl_port_unlock();
+  update_display();
   delay(5);
 }
 
